@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "paperless-ngx-mistral-ocr"
-version = "0.1.0"
+version = "0.1.1"
 description = "Paperless-ngx parser plugin that OCRs PDFs and images with Mistral Document AI"
 readme = "README.md"
 requires-python = ">=3.12"
