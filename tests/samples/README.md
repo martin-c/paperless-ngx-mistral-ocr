@@ -12,12 +12,14 @@ Layout, one directory per sample:
                                         page_count, [content] contains /
                                         not_contains, [archive_text] contains
 
-Record a sample with the live API (needs an API key, see the README):
+Record a sample with the live Mistral API (needs an API key, see the README):
 
-    python -m paperless_mistral_ocr.sample record path/to/scan.pdf <name>
+    make record SAMPLE=path/to/scan.pdf NAME=<name>
 
-then fill in `expected.toml`. Optionally inspect the offline result with
+(underlying: `python -m paperless_mistral_ocr.sample record path/to/scan.pdf <name>`),
+then fill in `expected.toml`. Optionally inspect the result of the offline
+content conversion pipeline with
 
     python -m paperless_mistral_ocr.sample render tests/samples/<name> out/
 
-When no sample directories exist the harness skips.
+and run `make test`. When no sample directories exist the harness skips.

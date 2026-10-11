@@ -3,8 +3,8 @@
 Every directory under ``tests/samples/`` holding an ``expected.toml`` is a
 sample: the source document, a recorded ``response.json`` from the Mistral
 API and assertions. Samples are not tracked in git (they may hold personal
-data); the test skips when none are present. The full offline pipeline
-(recorded response -> content text + archive PDF) runs for each and the
+data); the test skips when none are present. The offline content conversion
+pipeline (recorded response -> content text + archive PDF) runs for each and the
 assertions are checked.
 """
 

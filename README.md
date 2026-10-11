@@ -114,11 +114,11 @@ server starts. The directory and its contents must be owned by root and must
 not be writable by others, otherwise paperless refuses to run anything in it.
 
 Prepare a directory on the host containing the init script from
-`deploy/custom-cont-init.d/` at the top level and the plugin next to it,
-either as a built wheel or as the source tree:
+`deploy/custom-cont-init.d/` at the top level and the plugin, either as a
+built wheel in a `wheels/` subdirectory or as the source tree:
 
     10-paperless-ngx-mistral-ocr.sh
-    paperless_ngx_mistral_ocr-0.1.0-py3-none-any.whl
+    wheels/paperless_ngx_mistral_ocr-0.1.0-py3-none-any.whl
 
 or
 
@@ -129,7 +129,9 @@ or
     paperless-ngx-mistral-ocr/src/paperless_mistral_ocr/...
 
 Mount it read-only at `/custom-cont-init.d`. The script prefers a wheel when
-one exists and installs into the image's system Python with
+one exists (the subdirectory matters: paperless tries to execute every file
+at the top level, and a wheel there logs a harmless "cannot execute binary
+file" on each start) and installs into the image's system Python with
 `uv pip install --system`, the same way paperless 3.3.0 installs its own
 dependencies (its base image ships uv and Python 3.14). It compares the
 installed version with the wheel or `pyproject.toml` version and skips the
@@ -162,26 +164,27 @@ Setup, from the project directory:
 - `uv venv --python 3.14 .venv`
 - `uv pip install --python .venv/bin/python -e ".[dev]"`
 
-Checks:
+Checks, as `make` targets (the underlying command follows each):
 
-- `.venv/bin/python -m pytest` runs the unit tests and, if any are present,
-  the private sample documents (see below). No API calls.
-- `.venv/bin/ruff check src tests` and `.venv/bin/ruff format --check src tests`
-  must pass; the code follows the Google Python Style Guide.
-- `MISTRAL_LIVE_TESTS=1 .venv/bin/python -m pytest tests/test_live.py` runs one
-  real API call on a generated fictional scan (skipped by default; needs an
-  API key as described below).
+- `make test` (the default target) runs the unit tests and, if any are
+  present, the private sample documents (see below). No API calls.
+  Underlying: `.venv/bin/python -m pytest`.
+- `make lint` runs `ruff check` and `ruff format --check` on `src` and
+  `tests`; both must pass. The code follows the Google Python Style Guide.
+  `make format` applies the formatting.
+- `make test-live` runs one real call to the Mistral API on a generated
+  fictional scan; it is skipped by default and needs an API key as described
+  below. Underlying: `MISTRAL_LIVE_TESTS=1 .venv/bin/python -m pytest
+  tests/test_live.py`.
 
-A `Makefile` wraps these commands: `make test` (offline suite, the default),
-`make lint`, `make format`, `make build`, `make test-live` and
-`make record SAMPLE=path/to/scan.pdf`. The live targets pass
-`MISTRAL_API_KEY_COMMAND`, which defaults to the `keychain` alias; override it
-with `make test-live KEY_COMMAND="..."` or by exporting `KEY_COMMAND`. `PYTHON`
+The targets that reach the Mistral API pass `MISTRAL_API_KEY_COMMAND`, which
+defaults to the `keychain` alias; override it with
+`make test-live KEY_COMMAND="..."` or by exporting `KEY_COMMAND`. `PYTHON`
 defaults to the venv interpreter.
 
-Building a wheel: `uv build --wheel` writes
-`dist/paperless_ngx_mistral_ocr-<version>-py3-none-any.whl`, which can be dropped
-next to the init script.
+Building a wheel: `make build` (underlying `uv build --wheel`) writes
+`dist/paperless_ngx_mistral_ocr-<version>-py3-none-any.whl`, which goes into
+the `wheels/` subdirectory next to the init script.
 
 Layout: `src/paperless_mistral_ocr/config.py` (environment variables),
 `client.py` (HTTP, retries, errors), `content.py` (response to plain text),
@@ -210,24 +213,32 @@ If none yields a key the tools stop with a message listing these options.
 ### Private sample documents
 
 `tests/samples/` holds real documents for end-to-end checks: one directory per
-sample with the source document, the recorded API `response.json` and an
-`expected.toml` with assertions (substrings that must or must not appear in
-the content, the page count, substrings that must appear in the text read back
-from the archive PDF). `tests/test_samples.py` discovers every such directory,
-runs the full offline pipeline on it and checks the assertions; it skips when
-there are none. Because real scans usually contain personal data the
-directory's contents are gitignored and never published; only its README is
-tracked.
+sample with the source document, the recorded Mistral API `response.json` and
+an `expected.toml` with assertions.
+The response is written once, when the sample is recorded, and reused on every
+test run, so the test suite itself makes no API calls.
+Assertions include substrings that must or must not appear in the content, the
+page count, and substrings that must appear in the text read back from the
+archive PDF.
+`tests/test_samples.py` discovers every such directory, runs the offline
+content conversion pipeline on it (recorded response to content text and
+archive PDF) and checks the assertions; it skips when there are none.
+Because real scans often contain personal data the directory's contents are
+gitignored and never published; only its README is tracked. A sample recorded
+for a bad result therefore doubles as a regression test for its fix.
 
 To add a sample:
 
-- `.venv/bin/python -m paperless_mistral_ocr.sample record path/to/scan.pdf my_sample`
-  calls the live API and writes `tests/samples/my_sample/` with the document,
-  `response.json` and a skeleton `expected.toml`;
+- run `make record SAMPLE=path/to/file.pdf NAME=sample_name` (`NAME` defaults
+  to the file's basename). This sends the file to the live Mistral API and
+  writes `tests/samples/sample_name/` with the file, `response.json` and a
+  skeleton `expected.toml`. Underlying command:
+  `.venv/bin/python -m paperless_mistral_ocr.sample record path/to/file.pdf sample_name`;
 - fill in the assertions in `expected.toml`;
-- optionally `.venv/bin/python -m paperless_mistral_ocr.sample render tests/samples/my_sample out/`
-  writes `content.txt`, `archive.pdf` and `archive_text.txt` for inspection;
-- run `pytest`.
+- optionally `.venv/bin/python -m paperless_mistral_ocr.sample render tests/samples/sample_name out/`
+  runs the offline content conversion pipeline and writes `content.txt`,
+  `archive.pdf` and `archive_text.txt` for inspection;
+- run `make test`.
 
 ## Known limitations
 

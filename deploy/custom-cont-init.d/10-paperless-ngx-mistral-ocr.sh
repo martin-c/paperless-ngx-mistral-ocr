@@ -10,7 +10,11 @@
 # Expected layout of the mounted directory, either a built wheel:
 #
 #   /custom-cont-init.d/10-paperless-ngx-mistral-ocr.sh         (this file)
-#   /custom-cont-init.d/paperless_ngx_mistral_ocr-<version>-py3-none-any.whl
+#   /custom-cont-init.d/wheels/paperless_ngx_mistral_ocr-<version>-py3-none-any.whl
+#
+# (a wheel directly next to this script also works, but the runner then
+# tries to execute the .whl as a shell script too and logs a harmless
+# "cannot execute binary file" for it on every start),
 #
 # or the plugin source tree:
 #
@@ -31,9 +35,10 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 plugin_src="${PAPERLESS_MISTRAL_OCR_SRC:-${script_dir}/paperless-ngx-mistral-ocr}"
 package="paperless-ngx-mistral-ocr"
 
-# Pick the newest wheel next to this script, if any.
+# Pick the newest wheel in wheels/ (preferred) or next to this script, if any.
 wheel=""
-for candidate in "${script_dir}"/paperless_ngx_mistral_ocr-*.whl; do
+for candidate in "${script_dir}"/wheels/paperless_ngx_mistral_ocr-*.whl \
+                 "${script_dir}"/paperless_ngx_mistral_ocr-*.whl; do
     [ -f "${candidate}" ] || continue
     if [ -z "${wheel}" ] || [ "${candidate}" -nt "${wheel}" ]; then
         wheel="${candidate}"

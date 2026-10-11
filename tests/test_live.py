@@ -20,7 +20,9 @@ pytestmark = pytest.mark.live
 @pytest.fixture
 def live_settings():
     if os.environ.get("MISTRAL_LIVE_TESTS") != "1":
-        pytest.skip("set MISTRAL_LIVE_TESTS=1 to run live API tests")
+        pytest.skip(
+            "set MISTRAL_LIVE_TESTS=1 to run tests against the live Mistral API"
+        )
     try:
         key = resolve_api_key()
     except ApiKeyError as e:

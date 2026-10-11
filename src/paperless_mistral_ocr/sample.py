@@ -4,9 +4,9 @@ Usage:
     python -m paperless_mistral_ocr.sample record DOCUMENT NAME [--samples-dir DIR]
     python -m paperless_mistral_ocr.sample render SAMPLE_DIR OUTPUT_DIR
 
-``record`` runs the live API on DOCUMENT and writes ``tests/samples/NAME/``
+``record`` runs the live Mistral API on DOCUMENT and writes ``tests/samples/NAME/``
 with a copy of the document, ``response.json`` and a skeleton ``expected.toml``.
-``render`` runs the offline pipeline on a recorded sample and writes
+``render`` runs the offline content conversion pipeline on a recorded sample and writes
 ``content.txt`` and ``archive.pdf`` for manual inspection.
 
 The API key is resolved by ``paperless_mistral_ocr.keys`` (``MISTRAL_API_KEY``,
@@ -56,8 +56,17 @@ def guess_mime_type(path: Path) -> str:
     return mime_type
 
 
+def _user_path(value: str) -> Path:
+    """Parse a CLI path argument, expanding a leading ``~``.
+
+    Shells do not expand ``~`` inside quoted values or ``NAME=value`` make
+    arguments, so the expansion is done here.
+    """
+    return Path(value).expanduser()
+
+
 def record(document: Path, name: str, samples_dir: Path, max_pages: int) -> Path:
-    """Run the live API on ``document`` and store a new sample directory."""
+    """Run the live Mistral API on ``document`` and store a new sample directory."""
     mime_type = guess_mime_type(document)
     try:
         api_key = resolve_api_key()
@@ -88,7 +97,7 @@ def record(document: Path, name: str, samples_dir: Path, max_pages: int) -> Path
 
 
 def render(sample_dir: Path, output_dir: Path) -> None:
-    """Run the offline pipeline on a recorded sample for inspection."""
+    """Run the offline content conversion pipeline on a sample for inspection."""
     import tomllib
 
     expected = tomllib.loads((sample_dir / "expected.toml").read_text("utf-8"))
@@ -110,15 +119,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m paperless_mistral_ocr.sample")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    rec = sub.add_parser("record", help="record a sample with the live API")
-    rec.add_argument("document", type=Path)
+    rec = sub.add_parser("record", help="record a sample with the live Mistral API")
+    rec.add_argument("document", type=_user_path)
     rec.add_argument("name")
-    rec.add_argument("--samples-dir", type=Path, default=DEFAULT_SAMPLES_DIR)
+    rec.add_argument("--samples-dir", type=_user_path, default=DEFAULT_SAMPLES_DIR)
     rec.add_argument("--max-pages", type=int, default=50)
 
-    ren = sub.add_parser("render", help="run the offline pipeline on a sample")
-    ren.add_argument("sample_dir", type=Path)
-    ren.add_argument("output_dir", type=Path)
+    ren = sub.add_parser(
+        "render", help="run the offline content conversion pipeline on a sample"
+    )
+    ren.add_argument("sample_dir", type=_user_path)
+    ren.add_argument("output_dir", type=_user_path)
 
     args = parser.parse_args(argv)
     if args.command == "record":

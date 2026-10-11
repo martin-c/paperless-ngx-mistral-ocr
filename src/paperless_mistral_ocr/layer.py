@@ -30,6 +30,7 @@ MIN_FONT_SIZE = 2.0
 MAX_LINE_FONT_RATIO = 0.8
 SINGLE_LINE_MIN_RATIO = 0.35
 SHRINK_FACTOR = 0.9
+TALL_BOX_RATIO = 2.5  # height/width above which a block is written vertically
 NATIVE_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png"})
 MATH_RE = re.compile(r"\$\$?([^$]+)\$\$?")
 
@@ -153,6 +154,8 @@ class TextLayerWriter:
         )
         if size >= box.height * SINGLE_LINE_MIN_RATIO:
             self._write_line((box.x0, box.y1 - box.height * 0.2), text, size)
+        elif box.height > box.width * TALL_BOX_RATIO:
+            self._write_vertical(box, text)
         else:
             self._write_paragraph(box, text)
 
@@ -170,13 +173,46 @@ class TextLayerWriter:
         writer.append(origin, text, font=self._font, fontsize=size)
         writer.write_text(self._page, render_mode=INVISIBLE)
 
+    def _write_vertical(self, box: Box, text: str) -> None:
+        """Write a tall, narrow block as one line rotated to read bottom-to-top.
+
+        Magazine margins and spines carry text rotated 90 degrees; wrapping
+        such a block as a paragraph cannot work because the box is narrower
+        than a single glyph. The line is fitted to the box height and rotated
+        about its start point at the bottom of the box.
+        """
+        size = fit_font_size(
+            self._font, text, box.height, box.width * MAX_LINE_FONT_RATIO
+        )
+        origin = pymupdf.Point(box.x0 + size * self._font.ascender, box.y1)
+        writer = pymupdf.TextWriter(self._page.rect)
+        writer.append(origin, text, font=self._font, fontsize=size)
+        writer.write_text(
+            self._page,
+            render_mode=INVISIBLE,
+            morph=(origin, pymupdf.Matrix(90)),
+        )
+
     def _write_paragraph(self, box: Box, text: str) -> None:
-        """Wrap text inside the box, shrinking the font until it fits."""
-        size = box.height * MAX_LINE_FONT_RATIO
+        """Wrap text inside the box, shrinking the font until it fits.
+
+        PyMuPDF raises ``ValueError`` when the first line cannot even start
+        inside the box at the requested size; that is treated like any other
+        non-fit and the font is shrunk further.
+        """
+        size = min(
+            box.height * MAX_LINE_FONT_RATIO,
+            box.height / self._font.ascender,
+        )
         rect = box.to_rect()
         while size >= MIN_FONT_SIZE:
             writer = pymupdf.TextWriter(self._page.rect)
-            unfitted = writer.fill_textbox(rect, text, font=self._font, fontsize=size)
+            try:
+                unfitted = writer.fill_textbox(
+                    rect, text, font=self._font, fontsize=size
+                )
+            except ValueError:
+                unfitted = text
             if not unfitted:
                 writer.write_text(self._page, render_mode=INVISIBLE)
                 return
@@ -239,7 +275,19 @@ def overlay_page(page: pymupdf.Page, ocr_page: dict[str, Any]) -> bool:
         ocr_page.get("dimensions") or {}, page.rect.width, page.rect.height
     )
     for block in blocks:
-        writer.write_block(block_box(block, sx, sy), block_lines(block))
+        box = block_box(block, sx, sy)
+        try:
+            writer.write_block(box, block_lines(block))
+        except Exception:
+            # One odd block must not fail the whole document: the text is
+            # still in the content; only this block's layer position is lost.
+            logger.warning(
+                "page %d: could not write %s block at %s to the text layer",
+                page.number,
+                block.get("type", "?"),
+                box,
+                exc_info=True,
+            )
     return True
 
 

@@ -3,6 +3,7 @@ import pytest
 
 from paperless_mistral_ocr.layer import (
     Box,
+    TextLayerWriter,
     block_box,
     block_lines,
     build_archive,
@@ -203,3 +204,69 @@ def test_build_archive_ignores_out_of_range_pages(scan_pdf, tmp_path):
     out = tmp_path / "archive.pdf"
     assert build_archive(scan_pdf, "application/pdf", pages, out) == 0
     assert out.exists()
+
+
+def _words_in(page, box):
+    return [w for w in page.get_text("words") if pymupdf.Rect(w[:4]).intersects(box)]
+
+
+def test_tall_narrow_block_is_written_vertically():
+    """Regression: vertical margin text used to raise 'Text must start in rectangle'."""
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=800)
+    writer = TextLayerWriter(page)
+    text = "Photograph by Someone for a magazine feature running down the margin"
+    box = Box(10, 100, 22, 700)
+    writer.write_block(box, [text])
+    assert page.get_text("text").split() == text.split()
+    words = _words_in(page, box.to_rect())
+    assert len(words) == len(text.split())
+    assert all(pymupdf.Rect(w[:4]).width < 20 for w in words)
+
+
+def test_paragraph_in_box_too_small_for_its_font_does_not_raise():
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=800)
+    writer = TextLayerWriter(page)
+    long_text = " ".join(["word"] * 80)
+    writer.write_block(Box(10, 10, 30, 60), [long_text])
+    writer.write_block(Box(10, 100, 400, 101), [long_text])
+    assert "word" in page.get_text("text")
+
+
+def test_overlay_page_survives_a_failing_block(monkeypatch, caplog):
+    doc = pymupdf.open()
+    page = doc.new_page(width=600, height=800)
+    calls = []
+
+    def boom(self, box, lines):
+        calls.append(lines)
+        if len(calls) == 1:
+            raise RuntimeError("synthetic failure")
+
+    monkeypatch.setattr(TextLayerWriter, "write_block", boom)
+    ocr_page = {
+        "dimensions": {"width": 600, "height": 800, "dpi": 72},
+        "blocks": [
+            {
+                "type": "text",
+                "content": "first",
+                "top_left_x": 0,
+                "top_left_y": 0,
+                "bottom_right_x": 100,
+                "bottom_right_y": 20,
+            },
+            {
+                "type": "text",
+                "content": "second",
+                "top_left_x": 0,
+                "top_left_y": 40,
+                "bottom_right_x": 100,
+                "bottom_right_y": 60,
+            },
+        ],
+    }
+    with caplog.at_level("WARNING"):
+        assert overlay_page(page, ocr_page) is True
+    assert len(calls) == 2
+    assert "could not write text block" in caplog.text
