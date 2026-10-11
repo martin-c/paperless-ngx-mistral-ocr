@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.DS_Store
+# Sample documents may contain personal data; only the README is tracked.
+tests/samples/*
+!tests/samples/README.md
